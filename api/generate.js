@@ -2,16 +2,21 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
+
   const { gu, target, why, whyso, what, how, iif, subtitle, extra, concerns } = req.body;
+
   if (!gu || !target || !why || !what || !how) {
     return res.status(400).json({ error: '필수 항목이 누락됐어요.' });
   }
+
   const concernNote = concerns && concerns.length
     ? `\n\n[오해 방지 요청] 다음 우려를 고려해서 행정 언어로 표현해줘: ${concerns.join(', ')}`
     : '';
+
   const whysoNote = whyso
     ? whyso
     : `(데이터 없음 → ${gu} 청년 관련 통계/연구 기반으로 설득력 있는 근거를 직접 작성해줘.)`;
+
   const prompt = `당신은 서울시 주민참여예산 제안 신청서 전문 작성가입니다.
 아래 입력 정보를 바탕으로 완성도 높은 주민참여예산 제안 신청서를 작성해주세요.
 
@@ -37,23 +42,24 @@ export default async function handler(req, res) {
 
 다음 JSON 형식으로만 응답해줘. 마크다운 기호나 다른 텍스트 없이 순수 JSON만:
 {"사업명":"...","필요성및기대효과":"...","사업내용아이디어":"..."}`;
+
   try {
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': process.env.ANTHROPIC_API_KEY,
-        'anthropic-version': '2023-06-01',
-      },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
-        max_tokens: 1200,
-        messages: [{ role: 'user', content: prompt }],
-      }),
-    });
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${process.env.GEMINI_API_KEY}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: { temperature: 0.7, maxOutputTokens: 1200 }
+        })
+      }
+    );
+
     const data = await response.json();
     if (!response.ok) return res.status(500).json({ error: 'AI 서버 오류가 발생했어요.' });
-    const text = data.content.map(i => i.text || '').join('');
+
+    const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
     const parsed = JSON.parse(text.replace(/```json|```/g, '').trim());
     return res.status(200).json(parsed);
   } catch (e) {
